@@ -16,11 +16,12 @@ interface Map {
     x: number // top, 0-index
     y: number // left, 0-index
     order: number
+    rotation?: 'cw' | 'ccw'
   }[]
 }
 
 function parseInput(input: string) {
-  const linesRaw = input.split('\n')
+  const linesRaw = input.trim().split('\n')
   const lines = linesRaw.map((l) => l.split(' ').filter((x) => x))
 
   // check rectangular and not empty
@@ -51,19 +52,35 @@ function parseInput(input: string) {
       })
       if (val.startsWith('p')) {
         if (val.length !== 4) throw 'malformed player tag'
-        const order = parseInt(val.charAt(1))
+        const order = parseInt(val.charAt(1), 16)
         const face = val.charAt(2) as Face
-        const health = parseInt(val.charAt(3))
+        const health = parseInt(val.charAt(3), 16)
         if (!'nesw'.includes(face)) throw 'player face invalid'
         actors.push({ type: 'player', order, x, y, face, health })
       }
       if (val.startsWith('t')) {
         if (val.length !== 4) throw 'malformed target tag'
-        const order = parseInt(val.charAt(1))
+        const order = parseInt(val.charAt(1), 16)
         const face = val.charAt(2) as Face
-        const health = parseInt(val.charAt(3))
+        const health = parseInt(val.charAt(3), 16)
         if (!'news'.includes(face)) throw 'player face invalid'
         actors.push({ type: 'target', order, x, y, face, health })
+      }
+      if (val.startsWith('e')) {
+        if (val.length !== 4) throw 'malformed enemy tag'
+        const order = parseInt(val.charAt(1), 16)
+        const face = val.charAt(2) as Face
+        const health = parseInt(val.charAt(3), 16)
+        if (!'news'.includes(face)) throw 'enemy face invalid'
+        actors.push({
+          type: 'enemy',
+          order,
+          x,
+          y,
+          face,
+          health,
+          rotation: 'ccw',
+        })
       }
     }
   }
@@ -106,6 +123,11 @@ interface ListingEntry {
   map: Map
   lastMap: Map
   movement1: string
+  movement2: string
+  movement3: string
+  probe1: any
+  probe2: any
+  probe3: any
 }
 
 function rotateCW(face: Face): Face {
@@ -147,10 +169,12 @@ export default function Home() {
     map == undefined ? [] : map.actors.filter((a) => a.type == 'player')
 
   const player1Order = players.length >= 1 ? players[0].order : -1
-  const player2Order = players.length >= 2 ? players[0].order : -1
+  const player2Order = players.length >= 2 ? players[1].order : -1
+  const player3Order = players.length >= 3 ? players[2].order : -1
 
   const [player1, setPlayer1] = useState<string>('')
   const [player2, setPlayer2] = useState<string>('')
+  const [player3, setPlayer3] = useState<string>('')
 
   const [listing, setListing] = useState<ListingEntry[]>([])
   const [showMap, setShowMap] = useState(true)
@@ -159,10 +183,20 @@ export default function Home() {
     if (map) {
       const movements1 = player1.split('').filter((a) => a)
       const movements2 = player2.split('').filter((a) => a)
+      const movements3 = player3.split('').filter((a) => a)
 
       const listingEntries: ListingEntry[] = []
 
-      for (let i = 0; i < Math.max(movements1.length, movements2.length); i++) {
+      for (
+        let i = 0;
+        i <
+        Math.max(
+          movements1.length,
+          movements2.length * Math.sign(player2Order),
+          movements3.length * Math.sign(player3Order)
+        );
+        i++
+      ) {
         const lastMap =
           listingEntries.length == 0
             ? map
@@ -172,18 +206,34 @@ export default function Home() {
 
         let movement1 = ''
         let movement2 = ''
+        let movement3 = ''
+
+        let probe1: any = undefined
+        let probe2: any = undefined
+        let probe3: any = undefined
 
         currentMap.actors
           .filter((x) => x.type == 'player')
           .forEach((player) => {
             const movement =
               player.order == player1Order
-                ? i < movements1.length
-                  ? movements1[i]
-                  : '?'
+                ? movements1[i] ?? ''
+                : player.order == player2Order
+                ? movements2[i] ?? ''
+                : player.order == player3Order
+                ? movements3[i] ?? ''
                 : 'not implemented'
             if (player.order == player1Order) {
               movement1 = movement
+              probe1 = renderProbes(currentMap, player1Order)
+            }
+            if (player.order == player2Order) {
+              movement2 = movement
+              probe2 = renderProbes(currentMap, player2Order)
+            }
+            if (player.order == player3Order) {
+              movement3 = movement
+              probe3 = renderProbes(currentMap, player3Order)
             }
 
             if (movement == 'l') {
@@ -235,22 +285,118 @@ export default function Home() {
           })
 
         currentMap.actors = currentMap.actors.filter((a) => a.health > 0)
-        if (!movement1) break
-        if (!'lrmws'.includes(movement1) || !movement1) {
-          listingEntries.push({ map: currentMap, movement1: '?', lastMap })
+
+        currentMap.actors
+          .filter((x) => x.type == 'enemy')
+          .forEach((enemy) => {
+            let hit = false
+            let pos = { x: enemy.x, y: enemy.y }
+            bullet: {
+              for (;;) {
+                pos = move1(pos.x, pos.y, enemy.face)
+                if (
+                  pos.x < 0 ||
+                  pos.y < 0 ||
+                  pos.x >= currentMap.width ||
+                  pos.y >= currentMap.height
+                ) {
+                  break // out of bounds
+                }
+                if (currentMap.grid[pos.x][pos.y].type == 'block') {
+                  break // hit wall
+                }
+                for (const actor of currentMap.actors) {
+                  if (actor.x == pos.x && actor.y == pos.y) {
+                    actor.health--
+                    hit = true
+                    break bullet
+                  }
+                }
+              }
+            }
+            if (!hit) {
+              enemy.face = rotateCW(rotateCW(rotateCW(enemy.face)))
+              // todo: change direction if obstacle
+            }
+          })
+
+        currentMap.actors = currentMap.actors.filter((a) => a.health > 0)
+        if (!movement1 && !movement2 && !movements3) break
+        if (!'lrmws'.includes(movement1)) {
+          listingEntries.push({
+            map: currentMap,
+            movement1: '?',
+            movement2,
+            movement3,
+            probe1,
+            probe2,
+            probe3,
+            lastMap,
+          })
+          break
+        } else if (!'lrmws'.includes(movement2)) {
+          listingEntries.push({
+            map: currentMap,
+            movement1,
+            movement2: '?',
+            movement3,
+            probe1,
+            probe2,
+            probe3,
+            lastMap,
+          })
+          break
+        } else if (!'lrmws'.includes(movement3)) {
+          listingEntries.push({
+            map: currentMap,
+            movement1,
+            movement2,
+            movement3: '?',
+            probe1,
+            probe2,
+            probe3,
+            lastMap,
+          })
           break
         } else {
-          listingEntries.push({ map: currentMap, movement1, lastMap })
+          listingEntries.push({
+            map: currentMap,
+            movement1,
+            movement2,
+            movement3,
+            probe1,
+            probe2,
+            probe3,
+            lastMap,
+          })
         }
       }
 
       if (listingEntries.length == 0) {
-        listingEntries.push({ map, movement1: '', lastMap: map })
+        listingEntries.push({
+          map,
+          movement1: '',
+          movement2: '',
+          movement3: '',
+          probe1: null,
+          probe2: null,
+          probe3: null,
+          lastMap: map,
+        })
       } else {
-        if (listingEntries[listingEntries.length - 1].movement1 !== '?') {
+        if (
+          listingEntries[listingEntries.length - 1].movement1 !== '?' &&
+          listingEntries[listingEntries.length - 1].movement2 !== '?' &&
+          listingEntries[listingEntries.length - 1].movement3 !== '?'
+        ) {
           listingEntries.push({
             map: listingEntries[listingEntries.length - 1].map,
             movement1: '',
+            movement2: '',
+            movement3: '',
+            probe1: null,
+            probe2: null,
+            probe3: null,
             lastMap: listingEntries[listingEntries.length - 1].map,
           })
         }
@@ -258,7 +404,7 @@ export default function Home() {
 
       setListing(listingEntries)
     }
-  }, [map, player1, player1Order, player2])
+  }, [map, player1, player1Order, player2, player2Order, player3, player3Order])
 
   return (
     <div className="m-8">
@@ -276,7 +422,7 @@ export default function Home() {
         >
           load from repo
         </a>
-        ):
+        , all numbers in hex):
       </p>
       <p className="mt-4">
         x = block
@@ -323,17 +469,40 @@ export default function Home() {
       {map && (
         <div className="min-h-[800px]">
           <p className="mt-6">
-            Player Actions (m(ove), s(hoot), w(ait), l(eft turn), r(ight turn),
-            separate with whitespace):
+            Player Actions (m(ove), s(hoot), w(ait), l(eft turn), r(ight turn)):
           </p>
           <p className="mt-4">
-            Player 1:
+            Player {player1Order}:
             <input
-              className="border-2 ml-3 w-96 uppercase"
+              className="border-2 ml-3 w-96 uppercase font-mono"
               value={player1}
               onChange={(event) => setPlayer1(event.target.value.toLowerCase())}
             />
           </p>
+          {player2Order > 0 && (
+            <p className="mt-4">
+              Player {player2Order}:
+              <input
+                className="border-2 ml-3 w-96 uppercase font-mono"
+                value={player2}
+                onChange={(event) =>
+                  setPlayer2(event.target.value.toLowerCase())
+                }
+              />
+            </p>
+          )}
+          {player3Order > 0 && (
+            <p className="mt-4">
+              Player {player3Order}:
+              <input
+                className="border-2 ml-3 w-96 uppercase font-mono"
+                value={player3}
+                onChange={(event) =>
+                  setPlayer3(event.target.value.toLowerCase())
+                }
+              />
+            </p>
+          )}
           <p className="my-4">
             (number of empty tiles until obstacle / E=enemy / P=friendly robot -
             F is finish tile)
@@ -352,8 +521,24 @@ export default function Home() {
               {showMap && (
                 <pre className="font-mono">{printMap(l.lastMap)}</pre>
               )}
-              <p className="font-bold uppercase">{l.movement1}</p>
-              {l.movement1 && renderProbes(l.lastMap)}
+              {players.length >= 1 && l.movement1 && (
+                <>
+                  <p className="font-bold uppercase">{l.movement1}</p>
+                  {l.probe1}
+                </>
+              )}
+              {players.length >= 2 && l.movement1 && (
+                <>
+                  <p className="font-bold uppercase">{l.movement2}</p>
+                  {l.probe2}
+                </>
+              )}
+              {players.length >= 3 && l.movement1 && (
+                <>
+                  <p className="font-bold uppercase">{l.movement3}</p>
+                  {l.probe3}
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -361,8 +546,8 @@ export default function Home() {
     </div>
   )
 
-  function renderProbes(map: Map) {
-    const player = map.actors.filter((x) => (x.order = player1Order))[0]
+  function renderProbes(map: Map, order: number) {
+    const player = map.actors.filter((x) => x.order == order)[0]
     return (
       <p>
         front: {probe(map, player.face, player.x, player.y)} back:{' '}
@@ -374,6 +559,8 @@ export default function Home() {
           player.y
         )}{' '}
         right: {probe(map, rotateCW(player.face), player.x, player.y)}
+        {/* health:{' '}
+        {player.health}*/}
       </p>
     )
   }
@@ -399,6 +586,7 @@ function probe(map: Map, face: Face, x: number, y: number) {
       for (const actor of map.actors) {
         if (actor.x == pos.x && actor.y == pos.y) {
           if (actor.type == 'target') prefix = 'E'
+          if (actor.type == 'enemy') prefix = 'E'
           if (actor.type == 'player') prefix = 'P'
           break probe
         }
