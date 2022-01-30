@@ -143,20 +143,26 @@ export default function Home() {
   const ref = createRef<HTMLTextAreaElement>()
   const [map, setMap] = useState<Map | undefined>(undefined)
 
-  const playerCount =
-    map == undefined ? 0 : map.actors.filter((a) => a.type == 'player').length
+  const players =
+    map == undefined ? [] : map.actors.filter((a) => a.type == 'player')
+
+  const player1Order = players.length >= 1 ? players[0].order : -1
+  const player2Order = players.length >= 2 ? players[0].order : -1
 
   const [player1, setPlayer1] = useState<string>('')
+  const [player2, setPlayer2] = useState<string>('')
 
   const [listing, setListing] = useState<ListingEntry[]>([])
+  const [showMap, setShowMap] = useState(true)
 
   useEffect(() => {
     if (map) {
       const movements1 = player1.split('').filter((a) => a)
+      const movements2 = player2.split('').filter((a) => a)
 
       const listingEntries: ListingEntry[] = []
 
-      for (const movement of movements1) {
+      for (let i = 0; i < Math.max(movements1.length, movements2.length); i++) {
         const lastMap =
           listingEntries.length == 0
             ? map
@@ -164,42 +170,95 @@ export default function Home() {
 
         const currentMap = JSON.parse(JSON.stringify(lastMap)) as Map
 
-        const players = currentMap.actors.filter((x) => x.type == 'player')
+        let movement1 = ''
+        let movement2 = ''
 
-        // resolve player action
-        if (movement == 'l') {
-          players[0].face = rotateCW(rotateCW(rotateCW(players[0].face)))
-        }
-        if (movement == 'r') {
-          players[0].face = rotateCW(players[0].face)
-        }
-        if (movement == 'm') {
-          const newpos = move1(players[0].x, players[0].y, players[0].face)
-          const gridType = currentMap.grid[newpos.x][newpos.y].type
-          if (gridType == 'block') {
-            players[0].health--
-          } else {
-            players[0].x = newpos.x
-            players[0].y = newpos.y
-          }
-        }
+        currentMap.actors
+          .filter((x) => x.type == 'player')
+          .forEach((player) => {
+            const movement =
+              player.order == player1Order
+                ? i < movements1.length
+                  ? movements1[i]
+                  : '?'
+                : 'not implemented'
+            if (player.order == player1Order) {
+              movement1 = movement
+            }
 
-        if (!'lrmws'.includes(movement)) {
+            if (movement == 'l') {
+              player.face = rotateCW(rotateCW(rotateCW(player.face)))
+            }
+            if (movement == 'r') {
+              player.face = rotateCW(player.face)
+            }
+            if (movement == 'm') {
+              const newpos = move1(player.x, player.y, player.face)
+              const gridType = currentMap.grid[newpos.x][newpos.y].type
+              if (
+                gridType == 'block' ||
+                currentMap.actors.some(
+                  (a) => a.x == newpos.x && a.y == newpos.y
+                )
+              ) {
+                player.health--
+              } else {
+                player.x = newpos.x
+                player.y = newpos.y
+              }
+            }
+            if (movement == 's') {
+              let pos = { x: player.x, y: player.y }
+              bullet: {
+                for (;;) {
+                  pos = move1(pos.x, pos.y, player.face)
+                  if (
+                    pos.x < 0 ||
+                    pos.y < 0 ||
+                    pos.x >= currentMap.width ||
+                    pos.y >= currentMap.height
+                  ) {
+                    break // out of bounds
+                  }
+                  if (currentMap.grid[pos.x][pos.y].type == 'block') {
+                    break // hit wall
+                  }
+                  for (const actor of currentMap.actors) {
+                    if (actor.x == pos.x && actor.y == pos.y) {
+                      actor.health--
+                      break bullet
+                    }
+                  }
+                }
+              }
+            }
+          })
+
+        currentMap.actors = currentMap.actors.filter((a) => a.health > 0)
+        if (!movement1) break
+        if (!'lrmws'.includes(movement1) || !movement1) {
           listingEntries.push({ map: currentMap, movement1: '?', lastMap })
           break
+        } else {
+          listingEntries.push({ map: currentMap, movement1, lastMap })
         }
-
-        listingEntries.push({ map: currentMap, movement1: movement, lastMap })
       }
-      const lastMap =
-        listingEntries.length == 0
-          ? map
-          : listingEntries[listingEntries.length - 1].map
-      listingEntries.push({ map: lastMap, movement1: '', lastMap })
+
+      if (listingEntries.length == 0) {
+        listingEntries.push({ map, movement1: '', lastMap: map })
+      } else {
+        if (listingEntries[listingEntries.length - 1].movement1 !== '?') {
+          listingEntries.push({
+            map: listingEntries[listingEntries.length - 1].map,
+            movement1: '',
+            lastMap: listingEntries[listingEntries.length - 1].map,
+          })
+        }
+      }
 
       setListing(listingEntries)
     }
-  }, [map, player1])
+  }, [map, player1, player1Order, player2])
 
   return (
     <div className="m-8">
@@ -208,17 +267,26 @@ export default function Home() {
       </Head>
       <h1 className="text-2xl">Sketchbot Helper</h1>
       <p className="mt-4">
-        Draw the map with these characters, please separate with whitespace:
+        Draw the map with these characters, please separate with whitespace (or{' '}
+        <a
+          href="https://github.com/Entkenntnis/sketchbot-helper/tree/main/levels"
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-500 underline"
+        >
+          load from repo
+        </a>
+        ):
       </p>
       <p className="mt-4">
         x = block
         <br />
         _ = empty <br /> f = finish tile
         <br />
-        pNDH = player (N = order / D = n(orth = up) s(outh) e(ast) w(est) / H =
+        pNFH = player (N = order / F = n(orth = up) s(outh) e(ast) w(est) / H =
         health )
         <br />
-        tNDH = target (N = order / D= face / H = health)
+        tNFH = target (N = order / F = face / H = health)
       </p>
       <textarea
         readOnly={map !== undefined}
@@ -266,15 +334,82 @@ export default function Home() {
               onChange={(event) => setPlayer1(event.target.value.toLowerCase())}
             />
           </p>
+          <p className="my-4">
+            (number of empty tiles until obstacle / E=enemy / P=friendly robot -
+            F is finish tile)
+          </p>
+          <p className="my-4">
+            <input
+              type="checkbox"
+              checked={showMap}
+              onChange={(e) => setShowMap(e.target.checked)}
+            />{' '}
+            show map
+          </p>
           {listing.map((l, i) => (
-            <div className="mt-4 flex gap-12 items-center border">
+            <div className="mt-4 flex gap-12 items-center border" key={i}>
               <p>Turn {i + 1}</p>
-              <pre className="mt-2 font-mono">{printMap(l.lastMap)}</pre>
-              <p className="mt-4 font-bold uppercase">{l.movement1}</p>
+              {showMap && (
+                <pre className="font-mono">{printMap(l.lastMap)}</pre>
+              )}
+              <p className="font-bold uppercase">{l.movement1}</p>
+              {l.movement1 && renderProbes(l.lastMap)}
             </div>
           ))}
         </div>
       )}
     </div>
   )
+
+  function renderProbes(map: Map) {
+    const player = map.actors.filter((x) => (x.order = player1Order))[0]
+    return (
+      <p>
+        front: {probe(map, player.face, player.x, player.y)} back:{' '}
+        {probe(map, rotateCW(rotateCW(player.face)), player.x, player.y)} left:{' '}
+        {probe(
+          map,
+          rotateCW(rotateCW(rotateCW(player.face))),
+          player.x,
+          player.y
+        )}{' '}
+        right: {probe(map, rotateCW(player.face), player.x, player.y)}
+      </p>
+    )
+  }
+}
+
+function probe(map: Map, face: Face, x: number, y: number) {
+  let finishTile = -1
+  let prefix = ''
+  let distance = 0
+  let pos = { x, y }
+  probe: {
+    for (;;) {
+      pos = move1(pos.x, pos.y, face)
+      if (pos.x < 0 || pos.y < 0 || pos.x >= map.width || pos.y >= map.height) {
+        break // out of bounds
+      }
+      if (map.grid[pos.x][pos.y].type == 'block') {
+        break // hit wall
+      }
+      if (map.grid[pos.x][pos.y].type == 'finish') {
+        finishTile = distance
+      }
+      for (const actor of map.actors) {
+        if (actor.x == pos.x && actor.y == pos.y) {
+          if (actor.type == 'target') prefix = 'E'
+          if (actor.type == 'player') prefix = 'P'
+          break probe
+        }
+      }
+      distance++
+    }
+  }
+  let output = prefix
+  output += distance.toString()
+  if (finishTile >= 0) {
+    output += '/F' + finishTile.toString()
+  }
+  return output
 }
