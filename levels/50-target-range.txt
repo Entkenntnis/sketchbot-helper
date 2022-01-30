@@ -1,0 +1,5 @@
+x x x x x x x
+x _ t5s1 t6s1 t7s1 _ x
+x p1e1 _ _ _ _ x
+x _ t2n1 t3n1 t4n1 _ x
+x x x x x x x

@@ -1,0 +1,7 @@
+x x x x x x x x x x x
+x _ _ t7s1 _ _ _ t4s1 _ _ x
+x _ _ _ _ _ _ _ _ _ x
+x t5e1 _ _ _ p1s1 _ _ _ t2w1 x
+x _ _ _ _ _ _ _ _ _ x
+x _ _ t6n1 _ _ _ t3n1 _ _ x
+x x x x x x x x x x x

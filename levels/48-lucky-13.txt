@@ -1,0 +1,8 @@
+x x x x x x x x
+x x _ x x _ x x
+x _ _ _ _ _ x x
+x x _ x x _ x x
+x x _ x _ _ f x
+x x _ x x x x x
+x x p1n1 x _ _ _ x
+x x x x x x x x
